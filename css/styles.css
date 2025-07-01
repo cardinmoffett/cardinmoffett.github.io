@@ -1,0 +1,132 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 50px auto;
+  background-color: #fffdf6;
+  width: 80%;
+  max-width: 1400px;
+}
+
+/* Main Page */
+
+header {
+  margin-bottom: 100px;
+}
+
+.splash h1 {
+  font-family: "Work Sans";
+  font-size: 64px;
+  font-weight: 900;
+  color: #ff5100;
+  padding: 0px;
+  margin: 0px;
+}
+
+.splash h2 {
+  font-family: "Work Sans";
+  font-size: 32px;
+  font-weight: 900;
+  color: black;
+  padding: 0px;
+  margin: 0px;
+  width: 50%;
+}
+
+.projects {
+  display: flex;
+  flex-flow: wrap;
+}
+
+.project {
+  float: left;
+  width: 50%;
+  padding: 2%;
+}
+
+.project img {
+  width: 100%;
+  border-radius: 24px;
+}
+
+.project ul {
+  list-style-type: none;
+  margin: 0 0 24px 0;
+  padding: 0px;
+}
+
+.project li {
+  display: inline-block;
+  font-family: "Work Sans";
+  font-size: 24px;
+  text-transform: uppercase;
+  font-weight: 900;
+  color: #888;
+}
+
+.project li + li::before {
+  content: "• ";
+}
+
+.project h3 {
+  font-family: "Work Sans";
+  font-size: 32px;
+  text-transform: uppercase;
+  font-weight: 900;
+  padding: 0px;
+  margin: 0 0 8px 0;
+}
+
+.project a {
+  font-family: "Space Mono";
+  font-weight: 700;
+  display: inline-block;
+  font-size: 24px;
+  text-transform: uppercase;
+  color: black;
+  text-decoration: none;
+  border: 1px solid black;
+  border-radius: 16px;
+  padding: 8px 16px;
+}
+
+.project p {
+  font-family: "Work Sans";
+  font-size: 16px;
+  padding-right: 16px;
+  line-height: 22px;
+  margin-bottom: 48px;
+}
+
+.project .description {
+  width: 40%;
+  float: left;
+}
+
+.project .cover {
+  width: 60%;
+  float: left;
+}
+
+@media only screen and (max-width: 1200px) {
+  .project {
+    width: 100%;
+  }
+}
+
+@media only screen and (max-width: 800px) {
+  .project {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .project .description {
+    width: 100%;
+    order: 1;
+  }
+  .project .cover {
+    width: 100%;
+    order: 0;
+  }
+}
