@@ -100,6 +100,8 @@
   }
   .chapter-title { font-family: var(--serif); font-size: calc(var(--font-size) * 1.6); text-align: center; margin: 12px 0 20px; font-weight: 700; }
   .para { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 22px; }
+  .para:last-child { margin-bottom: 0; }
+  #measure { position: absolute; visibility: hidden; pointer-events: none; left: -9999px; top: 0; }
   .para .body { flex: 1; min-width: 0; }
   .para .text { font-family: var(--serif); font-size: var(--font-size); line-height: 1.75; }
   .w {
@@ -269,7 +271,7 @@ const settings = Object.assign({ fontSize: 22, theme: "auto" }, safeJSON(localSt
 function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
 function safeJSON(s) { try { return JSON.parse(s) || {}; } catch { return {}; } }
-function saveSettings() { localStorageSet("lector-settings", JSON.stringify(settings)); applySettings(); }
+function saveSettings() { localStorageSet("lector-settings", JSON.stringify(settings)); applySettings(); repaginate(); }
 function applySettings() {
   document.documentElement.style.setProperty("--font-size", settings.fontSize + "px");
   if (settings.theme === "auto") document.documentElement.removeAttribute("data-theme");
@@ -311,29 +313,58 @@ function lookup(word) {
 }
 
 /* ================= Pagination ================= */
-// Pages are built from whole paragraphs so a paragraph never splits across pages.
-// Position is stored as a paragraph id, so it survives font-size changes.
-const PAGE_WORDS = 120, PAGE_MAX_PARAS = 8;
-function buildPages(book) {
+// Pages are filled by measuring real rendered heights, so a page fits the
+// screen without scrolling. Each paragraph reserves the taller of its Spanish
+// and English versions, so switching to English never overflows the page.
+// A single paragraph taller than the screen gets a page to itself (and scrolls).
+// Position is stored as a paragraph index, so it survives re-pagination.
+const PARA_GAP = 22;
+
+function pageMetrics() {
+  const el = $("page");
+  const cs = getComputedStyle(el);
+  return {
+    width: el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+    height: el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 2,
+  };
+}
+
+function paginateChapter(ci) {
+  const ch = state.book.chapters[ci];
+  const { width, height } = pageMetrics();
+  let box = $("measure");
+  if (!box) { box = document.createElement("div"); box.id = "measure"; document.body.appendChild(box); }
+  box.style.width = width + "px";
+  const btn = '<div class="tr-btn"></div>';
+  box.innerHTML = `<div class="chapter-title">${escapeHTML(ch.title)}</div>` + ch.paragraphs.map((p) =>
+    `<div class="para"><div class="body"><div class="text">${escapeHTML(p.text)}</div></div>${btn}</div>` +
+    `<div class="para"><div class="body"><div class="text translated">${escapeHTML(p.translation || "")}</div></div>${btn}</div>`
+  ).join("");
+  const nodes = box.children;
+  const titleCS = getComputedStyle(nodes[0]);
+  const titleH = nodes[0].offsetHeight + parseFloat(titleCS.marginTop) + parseFloat(titleCS.marginBottom);
+  const heights = ch.paragraphs.map((_, i) => Math.max(nodes[1 + 2 * i].offsetHeight, nodes[2 + 2 * i].offsetHeight));
+  box.innerHTML = "";
+
   const pages = [];
-  book.chapters.forEach((ch, ci) => {
-    let cur = null, words = 0;
-    ch.paragraphs.forEach((p, pi) => {
-      const n = p.text.split(/\s+/).length;
-      if (!cur || (words + n > PAGE_WORDS && cur.paras.length) || cur.paras.length >= PAGE_MAX_PARAS) {
-        cur = { ci, paras: [], first: pi === 0 };
-        pages.push(cur);
-        words = 0;
-      }
-      cur.paras.push(pi);
-      words += n;
-    });
+  let cur = [], used = titleH;
+  heights.forEach((h, pi) => {
+    const need = (cur.length ? PARA_GAP : 0) + h;
+    if (cur.length && used + need > height) { pages.push(cur); cur = []; used = 0; }
+    used += (cur.length ? PARA_GAP : 0) + h;
+    cur.push(pi);
   });
+  if (cur.length) pages.push(cur);
   return pages;
 }
 
+function chapterPages(ci) {
+  if (!state.chPages[ci]) state.chPages[ci] = paginateChapter(ci);
+  return state.chPages[ci];
+}
+
 /* ================= State & rendering ================= */
-const state = { book: null, meta: null, pages: [], pageIdx: 0, chapterPageStart: [], open: new Set() };
+const state = { book: null, meta: null, chPages: [], ci: 0, pg: 0, open: new Set() };
 const $ = (id) => document.getElementById(id);
 
 async function renderLibrary() {
@@ -376,33 +407,45 @@ async function openBook(id) {
   if (!book) return renderLibrary();
   state.book = book;
   state.meta = await getMeta(id);
-  state.pages = buildPages(book);
+  state.chPages = [];
   state.open = new Set();
   accentIndex = null;
   // Global paragraph index, used for book-wide progress.
   let g = 0;
   state.globalStart = book.chapters.map((ch) => { const s = g; g += ch.paragraphs.length; return s; });
   state.totalParas = g;
-  state.chapterPageStart = [];
-  state.pages.forEach((p, i) => { if (state.chapterPageStart[p.ci] === undefined) state.chapterPageStart[p.ci] = i; });
-
-  let idx = 0;
-  if (state.meta.pos) {
-    const { ci, pi } = state.meta.pos;
-    const found = state.pages.findIndex((p) => p.ci === ci && p.paras.includes(pi));
-    if (found >= 0) idx = found;
-  }
   $("library").classList.add("hidden");
   $("reader").classList.remove("hidden");
-  showPage(idx);
+  const pos = state.meta.pos;
+  if (pos && book.chapters[pos.ci]) goToParagraph(pos.ci, pos.pi);
+  else showPage(0, 0);
   updateSavedCount();
 }
 
-function showPage(idx) {
-  idx = Math.max(0, Math.min(state.pages.length - 1, idx));
-  state.pageIdx = idx;
-  const page = state.pages[idx];
-  const ch = state.book.chapters[page.ci];
+function goToParagraph(ci, pi) {
+  const pg = chapterPages(ci).findIndex((paras) => paras.includes(pi));
+  showPage(ci, Math.max(0, pg));
+}
+
+function step(dir) {
+  let { ci, pg } = state;
+  pg += dir;
+  if (pg < 0) {
+    if (ci === 0) return;
+    ci--; pg = chapterPages(ci).length - 1;
+  } else if (pg >= chapterPages(ci).length) {
+    if (ci === state.book.chapters.length - 1) return;
+    ci++; pg = 0;
+  }
+  showPage(ci, pg);
+}
+
+function showPage(ci, pg) {
+  const pages = chapterPages(ci);
+  pg = Math.max(0, Math.min(pages.length - 1, pg));
+  state.ci = ci; state.pg = pg;
+  const page = { ci, paras: pages[pg], first: pg === 0 };
+  const ch = state.book.chapters[ci];
   const el = $("page");
   el.innerHTML = "";
   if (page.first) {
@@ -451,13 +494,11 @@ function showPage(idx) {
   }
   el.scrollTop = 0;
 
-  const chPages = state.pages.filter((p) => p.ci === page.ci).length;
-  const inCh = idx - state.chapterPageStart[page.ci] + 1;
-  $("where").textContent = `${ch.title} · ${inCh} of ${chPages}`;
+  $("where").textContent = `${ch.title} · ${pg + 1} of ${pages.length}`;
   const globalIdx = state.globalStart[page.ci] + page.paras[0];
   $("progressBar").style.width = (globalIdx / Math.max(1, state.totalParas - 1) * 100) + "%";
-  $("prevBtn").disabled = idx === 0;
-  $("nextBtn").disabled = idx === state.pages.length - 1;
+  $("prevBtn").disabled = ci === 0 && pg === 0;
+  $("nextBtn").disabled = ci === state.book.chapters.length - 1 && pg === pages.length - 1;
 
   state.meta.pos = { ci: page.ci, pi: page.paras[0], globalIdx };
   putMeta(state.meta);
@@ -550,11 +591,11 @@ $("savedBtn").addEventListener("click", () => {
 });
 
 $("chaptersBtn").addEventListener("click", () => {
-  const cur = state.pages[state.pageIdx].ci;
+  const cur = state.ci;
   openSheet("<h2>Chapters</h2>" + state.book.chapters.map((c, i) =>
     `<button class="list-item ${i === cur ? "current" : ""}" data-ci="${i}">${escapeHTML(c.title)}</button>`).join(""));
   $("sheet").querySelectorAll("[data-ci]").forEach((b) => b.addEventListener("click", () => {
-    closeSheet(); showPage(state.chapterPageStart[+b.dataset.ci]);
+    closeSheet(); showPage(+b.dataset.ci, 0);
   }));
   const curBtn = $("sheet").querySelector(".current");
   if (curBtn) curBtn.scrollIntoView({ block: "center" });
@@ -574,13 +615,22 @@ function renderSettings() {
 }
 
 /* ================= Navigation ================= */
-$("prevBtn").addEventListener("click", () => showPage(state.pageIdx - 1));
-$("nextBtn").addEventListener("click", () => showPage(state.pageIdx + 1));
+function repaginate() {
+  if (!state.book || $("reader").classList.contains("hidden")) return;
+  const pi = chapterPages(state.ci)[state.pg][0];
+  state.chPages = [];
+  goToParagraph(state.ci, pi);
+}
+let resizeTimer = null;
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(repaginate, 150); });
+
+$("prevBtn").addEventListener("click", () => step(-1));
+$("nextBtn").addEventListener("click", () => step(1));
 $("backBtn").addEventListener("click", () => { closeSheet(); state.book = null; renderLibrary(); });
 document.addEventListener("keydown", (e) => {
   if (!state.book || !$("sheet").classList.contains("hidden")) { if (e.key === "Escape") closeSheet(); return; }
-  if (e.key === "ArrowRight") showPage(state.pageIdx + 1);
-  if (e.key === "ArrowLeft") showPage(state.pageIdx - 1);
+  if (e.key === "ArrowRight") step(1);
+  if (e.key === "ArrowLeft") step(-1);
 });
 // Horizontal swipe to turn pages.
 let touch = null;
@@ -590,7 +640,7 @@ $("page").addEventListener("touchend", (e) => {
   const t = e.changedTouches[0];
   const dx = t.clientX - touch.x, dy = t.clientY - touch.y;
   if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5 && Date.now() - touch.t < 800) {
-    showPage(state.pageIdx + (dx < 0 ? 1 : -1));
+    step(dx < 0 ? 1 : -1);
   }
   touch = null;
 }, { passive: true });
