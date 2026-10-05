@@ -113,10 +113,7 @@
   }
   .tr-btn svg { width: 26px; height: 26px; }
   .tr-btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .translation {
-    font-size: calc(var(--font-size) * 0.78); line-height: 1.5; color: var(--muted);
-    border-left: 3px solid var(--accent); padding: 4px 0 4px 12px; margin-top: 8px;
-  }
+  .para .text.translated { color: var(--accent); font-style: italic; cursor: pointer; }
 
   .footer {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -421,24 +418,34 @@ function showPage(idx) {
     const body = document.createElement("div");
     body.className = "body";
     const text = document.createElement("div");
-    text.className = "text";
-    text.appendChild(tokenize(p.text));
-    body.appendChild(text);
     const pid = p.id || `${page.ci}-${pi}`;
-    if (state.open.has(pid)) body.appendChild(translationEl(p));
+    body.appendChild(text);
     row.appendChild(body);
-    if (p.translation && p.translation.trim() !== p.text.trim()) {
-      const btn = document.createElement("button");
-      btn.className = "tr-btn" + (state.open.has(pid) ? " on" : "");
-      btn.setAttribute("aria-label", "Show translation");
+    // The translation replaces the Spanish in place, so it never lands offscreen.
+    const hasTr = p.translation && p.translation.trim() !== p.text.trim();
+    let btn = null;
+    const render = () => {
+      const on = hasTr && state.open.has(pid);
+      text.className = "text" + (on ? " translated" : "");
+      text.replaceChildren(on ? document.createTextNode(p.translation) : tokenize(p.text));
+      if (btn) {
+        btn.classList.toggle("on", on);
+        btn.setAttribute("aria-label", on ? "Show Spanish" : "Show translation");
+      }
+    };
+    const toggle = () => {
+      if (state.open.has(pid)) state.open.delete(pid); else state.open.add(pid);
+      render();
+    };
+    if (hasTr) {
+      btn = document.createElement("button");
+      btn.className = "tr-btn";
       btn.appendChild(trTpl.cloneNode(true));
-      btn.addEventListener("click", () => {
-        const existing = body.querySelector(".translation");
-        if (existing) { existing.remove(); state.open.delete(pid); btn.classList.remove("on"); }
-        else { body.appendChild(translationEl(p)); state.open.add(pid); btn.classList.add("on"); }
-      });
+      btn.addEventListener("click", toggle);
+      text.addEventListener("click", () => { if (state.open.has(pid)) toggle(); });
       row.appendChild(btn);
     }
+    render();
     el.appendChild(row);
   }
   el.scrollTop = 0;
@@ -453,13 +460,6 @@ function showPage(idx) {
 
   state.meta.pos = { ci: page.ci, pi: page.paras[0], globalIdx };
   putMeta(state.meta);
-}
-
-function translationEl(p) {
-  const d = document.createElement("div");
-  d.className = "translation";
-  d.textContent = p.translation;
-  return d;
 }
 
 function tokenize(text) {
