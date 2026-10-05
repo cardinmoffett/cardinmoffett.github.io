@@ -1,6 +1,6 @@
 // Caches the app shell so the reader opens with no connection.
 // Books themselves live in IndexedDB, not here.
-const CACHE = "lector-v1";
+const CACHE = "lector-v2";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
