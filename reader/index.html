@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Lector</title>
+<meta name="theme-color" content="#181b22" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Lector" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<link rel="icon" href="icon-192.png" />
+<style>
+  :root {
+    --bg: #181b22;
+    --surface: #222631;
+    --border: #343a48;
+    --text: #eceef3;
+    --muted: #8b92a3;
+    --accent: #1e9bf0;
+    --accent-2: #f39a1e;
+    --underline: #4a5163;
+    --hl: rgba(30, 155, 240, 0.22);
+    --font-size: 22px;
+    --serif: "Iowan Old Style", "New York", ui-serif, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #fbf8f2; --surface: #ffffff; --border: #e2ddd2; --text: #22252c;
+      --muted: #7a7f8a; --underline: #c9c3b6; --hl: rgba(30, 155, 240, 0.16);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #fbf8f2; --surface: #ffffff; --border: #e2ddd2; --text: #22252c;
+    --muted: #7a7f8a; --underline: #c9c3b6; --hl: rgba(30, 155, 240, 0.16);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--sans);
+    overscroll-behavior: none;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  .hidden { display: none !important; }
+
+  /* ---------- Library ---------- */
+  #library { max-width: 640px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 24px) 16px 40px; }
+  #library h1 { font-family: var(--serif); font-size: 34px; margin: 0 0 4px; }
+  #library .sub { color: var(--muted); margin: 0 0 24px; }
+  .book-card {
+    display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 14px; margin-bottom: 12px;
+  }
+  .book-card .cover {
+    width: 52px; height: 72px; border-radius: 6px; flex: none;
+    background: linear-gradient(135deg, #2b3a67, #1e9bf0); display: grid; place-items: center;
+    font-family: var(--serif); font-size: 26px; color: #fff;
+  }
+  .book-card .meta { flex: 1; min-width: 0; }
+  .book-card .title { font-family: var(--serif); font-size: 19px; }
+  .book-card .author { color: var(--muted); font-size: 14px; margin-top: 2px; }
+  .book-card .prog { height: 4px; background: var(--border); border-radius: 2px; margin-top: 10px; overflow: hidden; }
+  .book-card .prog > div { height: 100%; background: var(--accent); }
+  .book-card .del { color: var(--muted); font-size: 13px; padding: 6px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--accent); color: #fff; border-radius: 12px; padding: 12px 18px; font-weight: 600;
+  }
+  .btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+  .hint { color: var(--muted); font-size: 14px; line-height: 1.5; margin-top: 24px; }
+  #status { color: var(--muted); font-size: 14px; margin-top: 12px; min-height: 1.2em; }
+
+  /* ---------- Reader ---------- */
+  #reader { display: flex; flex-direction: column; height: 100%; }
+  .topbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
+    max-width: 720px; width: 100%; margin: 0 auto;
+  }
+  .icon-btn { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 10px; color: var(--accent); flex: none; }
+  .icon-btn svg { width: 24px; height: 24px; }
+  .icon-btn.back { color: var(--muted); }
+  .progress { flex: 1; height: 10px; background: var(--surface); border-radius: 5px; overflow: hidden; }
+  .progress > div { height: 100%; background: var(--accent); border-radius: 5px; min-width: 10px; transition: width .2s; }
+  .saved-count {
+    display: flex; align-items: center; gap: 6px; background: var(--accent-2); color: #fff;
+    border-radius: 12px; padding: 8px 12px; font-weight: 700; box-shadow: 0 3px 0 #c76f00;
+  }
+  .saved-count svg { width: 20px; height: 20px; }
+
+  #page {
+    flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: 8px 16px 24px; max-width: 720px; width: 100%; margin: 0 auto;
+    touch-action: pan-y;
+  }
+  .chapter-title { font-family: var(--serif); font-size: calc(var(--font-size) * 1.6); text-align: center; margin: 12px 0 20px; font-weight: 700; }
+  .para { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 22px; }
+  .para .body { flex: 1; min-width: 0; }
+  .para .text { font-family: var(--serif); font-size: var(--font-size); line-height: 1.75; }
+  .w {
+    text-decoration: underline; text-decoration-color: var(--underline);
+    text-decoration-thickness: 2px; text-underline-offset: 6px; cursor: pointer; border-radius: 4px;
+  }
+  .w.active { background: var(--hl); text-decoration-color: var(--accent); }
+  .w.saved { text-decoration-color: var(--accent-2); }
+  .tr-btn {
+    flex: none; width: 48px; height: 48px; border: 2px solid var(--border); border-radius: 12px;
+    display: grid; place-items: center; color: var(--accent); margin-top: 2px;
+  }
+  .tr-btn svg { width: 26px; height: 26px; }
+  .tr-btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .translation {
+    font-size: calc(var(--font-size) * 0.78); line-height: 1.5; color: var(--muted);
+    border-left: 3px solid var(--accent); padding: 4px 0 4px 12px; margin-top: 8px;
+  }
+
+  .footer {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 8px 12px calc(env(safe-area-inset-bottom) + 10px);
+    max-width: 720px; width: 100%; margin: 0 auto; color: var(--muted); font-size: 15px;
+  }
+  .footer button { color: var(--accent); padding: 8px 12px; border-radius: 10px; }
+  .footer button:disabled { color: var(--border); }
+  .footer .where { text-align: center; flex: 1; }
+
+  /* ---------- Sheets ---------- */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 10; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 11;
+    background: var(--surface); border-top: 1px solid var(--border);
+    border-radius: 18px 18px 0 0; padding: 18px 20px calc(env(safe-area-inset-bottom) + 20px);
+    max-width: 720px; margin: 0 auto; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 -10px 30px rgba(0,0,0,.25);
+  }
+  .sheet .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--border); margin: -6px auto 14px; }
+  .word-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .word-head .wd { font-family: var(--serif); font-size: 30px; font-weight: 700; }
+  .word-head .pos { color: var(--muted); font-style: italic; }
+  .word-root { color: var(--muted); margin-top: 4px; }
+  .word-root b { color: var(--text); font-weight: 600; }
+  .word-def { font-size: 20px; margin: 14px 0 6px; line-height: 1.4; }
+  .word-ctx { color: var(--muted); font-size: 15px; }
+  .sheet .row { display: flex; gap: 10px; margin-top: 18px; }
+  .sheet h2 { font-family: var(--serif); margin: 0 0 12px; }
+  .list-item {
+    display: block; width: 100%; text-align: left; padding: 12px 4px; border-bottom: 1px solid var(--border);
+  }
+  .list-item.current { color: var(--accent); font-weight: 600; }
+  .saved-item { display: flex; gap: 10px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .saved-item .w1 { font-family: var(--serif); font-size: 19px; font-weight: 600; }
+  .saved-item .d1 { color: var(--muted); flex: 1; }
+  .saved-item button { color: var(--muted); font-size: 13px; }
+  .setting { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .seg button { padding: 8px 14px; }
+  .seg button.on { background: var(--accent); color: #fff; }
+</style>
+</head>
+<body>
+
+<!-- Library -->
+<section id="library">
+  <h1>Lector</h1>
+  <p class="sub">Spanish books, fully offline.</p>
+  <div id="books"></div>
+  <div class="actions">
+    <button class="btn" id="importBtn">Import book (.json)</button>
+  </div>
+  <input type="file" id="fileInput" class="hidden" />
+  <div id="status"></div>
+  <p class="hint">
+    Books are stored only on this device, never uploaded anywhere.
+    On iPhone: open this page in Safari → Share → <b>Add to Home Screen</b>, then import your book
+    once while online. After that everything works in airplane mode.
+  </p>
+</section>
+
+<!-- Reader -->
+<section id="reader" class="hidden">
+  <div class="topbar">
+    <button class="icon-btn back" id="backBtn" aria-label="Library">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div class="progress"><div id="progressBar"></div></div>
+    <button class="icon-btn" id="chaptersBtn" aria-label="Chapters">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+    </button>
+    <button class="icon-btn" id="settingsBtn" aria-label="Text settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19L9 4l6 15M5 14h8"/><path d="M17 12.5c.6-.6 1.4-1 2.3-1 1.5 0 2.2.9 2.2 2.2V19M21.5 15.5h-2.6c-1.3 0-2.2.7-2.2 1.8s.8 1.7 1.9 1.7c1.4 0 2.9-1 2.9-2.5"/></svg>
+    </button>
+    <button class="saved-count" id="savedBtn" aria-label="Saved words">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><rect x="4" y="3" width="11" height="18" rx="2"/><path d="M15 6h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3"/></svg>
+      <span id="savedNum">0</span>
+    </button>
+  </div>
+  <div id="page"></div>
+  <div class="footer">
+    <button id="prevBtn">‹ Prev</button>
+    <div class="where" id="where"></div>
+    <button id="nextBtn">Next ›</button>
+  </div>
+</section>
+
+<div class="scrim hidden" id="scrim"></div>
+<div class="sheet hidden" id="sheet"></div>
+
+<template id="trIcon">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h9M7.5 3v2M5 5c.5 3 2.5 5.5 5.5 7M10 5c-.6 3.5-3 6.5-6.5 8"/><path d="M12 21l4.5-10L21 21M13.5 18h6"/></svg>
+</template>
+
+<script>
+"use strict";
+
+/* ================= Storage ================= */
+const DB_NAME = "lector";
+let dbPromise = null;
+function db() {
+  if (!dbPromise) {
+    dbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const d = req.result;
+        d.createObjectStore("books", { keyPath: "id" });   // full book JSON
+        d.createObjectStore("meta", { keyPath: "id" });    // position, saved words, per book
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  return dbPromise;
+}
+async function tx(store, mode, fn) {
+  const d = await db();
+  return new Promise((resolve, reject) => {
+    const t = d.transaction(store, mode);
+    const s = t.objectStore(store);
+    const req = fn(s);
+    t.oncomplete = () => resolve(req && req.result);
+    t.onerror = () => reject(t.error);
+  });
+}
+const getBook = (id) => tx("books", "readonly", (s) => s.get(id));
+const putBook = (b) => tx("books", "readwrite", (s) => s.put(b));
+const delBook = (id) => tx("books", "readwrite", (s) => s.delete(id));
+const getMeta = async (id) => (await tx("meta", "readonly", (s) => s.get(id))) || { id, pos: null, saved: {} };
+const putMeta = (m) => tx("meta", "readwrite", (s) => s.put(m));
+const delMeta = (id) => tx("meta", "readwrite", (s) => s.delete(id));
+async function listBooks() {
+  const d = await db();
+  return new Promise((resolve, reject) => {
+    const out = [];
+    const t = d.transaction("books", "readonly");
+    // Read only lightweight fields so the library stays fast.
+    t.objectStore("books").openCursor().onsuccess = (e) => {
+      const c = e.target.result;
+      if (!c) return;
+      const b = c.value;
+      out.push({ id: b.id, title: b.title, author: b.author, total: b.chapters.reduce((n, ch) => n + ch.paragraphs.length, 0), firstIds: b.chapters.map((ch) => ch.paragraphs[0] && ch.paragraphs[0].id) });
+      c.continue();
+    };
+    t.oncomplete = () => resolve(out);
+    t.onerror = () => reject(t.error);
+  });
+}
+
+const settings = Object.assign({ fontSize: 22, theme: "auto" }, safeJSON(localStorageGet("lector-settings")));
+function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
+function safeJSON(s) { try { return JSON.parse(s) || {}; } catch { return {}; } }
+function saveSettings() { localStorageSet("lector-settings", JSON.stringify(settings)); applySettings(); }
+function applySettings() {
+  document.documentElement.style.setProperty("--font-size", settings.fontSize + "px");
+  if (settings.theme === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", settings.theme);
+}
+applySettings();
+
+/* ================= Words ================= */
+// Common function words that are often missing from generated dictionaries.
+const FALLBACK = {
+  y: { root: "y", pos: "conjunction", definition: "and" },
+  e: { root: "y", pos: "conjunction", definition: "and (before i-/hi- sounds)" },
+  o: { root: "o", pos: "conjunction", definition: "or" },
+  u: { root: "o", pos: "conjunction", definition: "or (before o-/ho- sounds)" },
+  a: { root: "a", pos: "preposition", definition: "to, at; (personal a: marks a person as the object)" },
+  al: { root: "a + el", pos: "preposition", definition: "to the, at the; upon (+ infinitive)" },
+  del: { root: "de + el", pos: "preposition", definition: "of the, from the" },
+};
+const WORD_RE = /[\p{L}\p{M}]+(?:['’][\p{L}\p{M}]+)?/gu;
+
+function normalize(w) { return w.toLowerCase().normalize("NFC"); }
+function stripAccents(w) { return w.normalize("NFD").replace(/\p{M}/gu, ""); }
+
+let accentIndex = null; // accent-insensitive fallback lookup
+function lookup(word) {
+  const dict = state.book.dictionary || {};
+  const n = normalize(word);
+  let e = dict[n] || dict[word];
+  if (!e && FALLBACK[n]) e = Object.assign({ word: n }, FALLBACK[n]);
+  if (!e) {
+    if (!accentIndex) {
+      accentIndex = {};
+      for (const k in dict) { const s = stripAccents(k); if (!(s in accentIndex)) accentIndex[s] = k; }
+    }
+    const k = accentIndex[stripAccents(n)];
+    if (k) e = dict[k];
+  }
+  return e || null;
+}
+
+/* ================= Pagination ================= */
+// Pages are built from whole paragraphs so a paragraph never splits across pages.
+// Position is stored as a paragraph id, so it survives font-size changes.
+const PAGE_WORDS = 120, PAGE_MAX_PARAS = 8;
+function buildPages(book) {
+  const pages = [];
+  book.chapters.forEach((ch, ci) => {
+    let cur = null, words = 0;
+    ch.paragraphs.forEach((p, pi) => {
+      const n = p.text.split(/\s+/).length;
+      if (!cur || (words + n > PAGE_WORDS && cur.paras.length) || cur.paras.length >= PAGE_MAX_PARAS) {
+        cur = { ci, paras: [], first: pi === 0 };
+        pages.push(cur);
+        words = 0;
+      }
+      cur.paras.push(pi);
+      words += n;
+    });
+  });
+  return pages;
+}
+
+/* ================= State & rendering ================= */
+const state = { book: null, meta: null, pages: [], pageIdx: 0, chapterPageStart: [], open: new Set() };
+const $ = (id) => document.getElementById(id);
+
+async function renderLibrary() {
+  $("reader").classList.add("hidden");
+  $("library").classList.remove("hidden");
+  const books = await listBooks();
+  const wrap = $("books");
+  wrap.innerHTML = "";
+  if (!books.length) {
+    wrap.innerHTML = '<p class="sub">No books yet. Import a processed book file to begin.</p>';
+    return;
+  }
+  for (const b of books) {
+    const meta = await getMeta(b.id);
+    const pct = meta.pos ? Math.round((meta.pos.globalIdx || 0) / Math.max(1, b.total - 1) * 100) : 0;
+    const card = document.createElement("div");
+    card.className = "book-card";
+    card.innerHTML = `
+      <div class="cover">${escapeHTML((b.title || "?")[0])}</div>
+      <div class="meta">
+        <div class="title">${escapeHTML(b.title || b.id)}</div>
+        <div class="author">${escapeHTML(b.author || "")} · ${pct}%</div>
+        <div class="prog"><div style="width:${pct}%"></div></div>
+      </div>
+      <button class="del" aria-label="Remove book">Remove</button>`;
+    card.addEventListener("click", (e) => {
+      if (e.target.closest(".del")) return;
+      openBook(b.id);
+    });
+    card.querySelector(".del").addEventListener("click", async () => {
+      if (!confirm(`Remove "${b.title}" from this device? Your saved words for it will be deleted too.`)) return;
+      await delBook(b.id); await delMeta(b.id); renderLibrary();
+    });
+    wrap.appendChild(card);
+  }
+}
+
+async function openBook(id) {
+  const book = await getBook(id);
+  if (!book) return renderLibrary();
+  state.book = book;
+  state.meta = await getMeta(id);
+  state.pages = buildPages(book);
+  state.open = new Set();
+  accentIndex = null;
+  // Global paragraph index, used for book-wide progress.
+  let g = 0;
+  state.globalStart = book.chapters.map((ch) => { const s = g; g += ch.paragraphs.length; return s; });
+  state.totalParas = g;
+  state.chapterPageStart = [];
+  state.pages.forEach((p, i) => { if (state.chapterPageStart[p.ci] === undefined) state.chapterPageStart[p.ci] = i; });
+
+  let idx = 0;
+  if (state.meta.pos) {
+    const { ci, pi } = state.meta.pos;
+    const found = state.pages.findIndex((p) => p.ci === ci && p.paras.includes(pi));
+    if (found >= 0) idx = found;
+  }
+  $("library").classList.add("hidden");
+  $("reader").classList.remove("hidden");
+  showPage(idx);
+  updateSavedCount();
+}
+
+function showPage(idx) {
+  idx = Math.max(0, Math.min(state.pages.length - 1, idx));
+  state.pageIdx = idx;
+  const page = state.pages[idx];
+  const ch = state.book.chapters[page.ci];
+  const el = $("page");
+  el.innerHTML = "";
+  if (page.first) {
+    const h = document.createElement("div");
+    h.className = "chapter-title";
+    h.textContent = ch.title;
+    el.appendChild(h);
+  }
+  const trTpl = $("trIcon").content;
+  for (const pi of page.paras) {
+    const p = ch.paragraphs[pi];
+    const row = document.createElement("div");
+    row.className = "para";
+    const body = document.createElement("div");
+    body.className = "body";
+    const text = document.createElement("div");
+    text.className = "text";
+    text.appendChild(tokenize(p.text));
+    body.appendChild(text);
+    const pid = p.id || `${page.ci}-${pi}`;
+    if (state.open.has(pid)) body.appendChild(translationEl(p));
+    row.appendChild(body);
+    if (p.translation && p.translation.trim() !== p.text.trim()) {
+      const btn = document.createElement("button");
+      btn.className = "tr-btn" + (state.open.has(pid) ? " on" : "");
+      btn.setAttribute("aria-label", "Show translation");
+      btn.appendChild(trTpl.cloneNode(true));
+      btn.addEventListener("click", () => {
+        const existing = body.querySelector(".translation");
+        if (existing) { existing.remove(); state.open.delete(pid); btn.classList.remove("on"); }
+        else { body.appendChild(translationEl(p)); state.open.add(pid); btn.classList.add("on"); }
+      });
+      row.appendChild(btn);
+    }
+    el.appendChild(row);
+  }
+  el.scrollTop = 0;
+
+  const chPages = state.pages.filter((p) => p.ci === page.ci).length;
+  const inCh = idx - state.chapterPageStart[page.ci] + 1;
+  $("where").textContent = `${ch.title} · ${inCh} of ${chPages}`;
+  const globalIdx = state.globalStart[page.ci] + page.paras[0];
+  $("progressBar").style.width = (globalIdx / Math.max(1, state.totalParas - 1) * 100) + "%";
+  $("prevBtn").disabled = idx === 0;
+  $("nextBtn").disabled = idx === state.pages.length - 1;
+
+  state.meta.pos = { ci: page.ci, pi: page.paras[0], globalIdx };
+  putMeta(state.meta);
+}
+
+function translationEl(p) {
+  const d = document.createElement("div");
+  d.className = "translation";
+  d.textContent = p.translation;
+  return d;
+}
+
+function tokenize(text) {
+  const frag = document.createDocumentFragment();
+  let last = 0;
+  for (const m of text.matchAll(WORD_RE)) {
+    if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+    const s = document.createElement("span");
+    s.className = "w";
+    s.textContent = m[0];
+    if (state.meta.saved[normalize(m[0])]) s.classList.add("saved");
+    frag.appendChild(s);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+  return frag;
+}
+
+/* ================= Sheets ================= */
+let activeWord = null;
+function openSheet(html) {
+  $("sheet").innerHTML = '<div class="grab"></div>' + html;
+  $("sheet").classList.remove("hidden");
+  $("scrim").classList.remove("hidden");
+  $("sheet").scrollTop = 0;
+}
+function closeSheet() {
+  $("sheet").classList.add("hidden");
+  $("scrim").classList.add("hidden");
+  if (activeWord) { activeWord.classList.remove("active"); activeWord = null; }
+}
+$("scrim").addEventListener("click", closeSheet);
+
+$("page").addEventListener("click", (e) => {
+  const w = e.target.closest(".w");
+  if (!w) return;
+  if (activeWord) activeWord.classList.remove("active");
+  activeWord = w;
+  w.classList.add("active");
+  showWord(w.textContent, w);
+});
+
+function showWord(word, spanEl) {
+  const e = lookup(word);
+  const key = normalize(word);
+  const isSaved = !!state.meta.saved[key];
+  const para = spanEl.closest(".para").querySelector(".text").textContent;
+  const html = e ? `
+      <div class="word-head"><span class="wd">${escapeHTML(word)}</span><span class="pos">${escapeHTML(e.pos || "")}</span></div>
+      ${e.root && normalize(e.root) !== key ? `<div class="word-root">from <b>${escapeHTML(e.root)}</b></div>` : ""}
+      <div class="word-def">${escapeHTML(e.definition || "")}</div>
+      ${e.context ? `<div class="word-ctx">${escapeHTML(e.context)}</div>` : ""}`
+    : `<div class="word-head"><span class="wd">${escapeHTML(word)}</span></div>
+       <div class="word-def" style="color:var(--muted)">Not in this book's dictionary. Try the sentence translation.</div>`;
+  openSheet(html + `<div class="row">
+      ${e ? `<button class="btn ${isSaved ? "secondary" : ""}" id="saveWord">${isSaved ? "Saved ✓" : "Save word"}</button>` : ""}
+      <button class="btn secondary" id="closeWord">Close</button></div>`);
+  $("closeWord").onclick = closeSheet;
+  if (e) $("saveWord").onclick = async () => {
+    if (state.meta.saved[key]) delete state.meta.saved[key];
+    else state.meta.saved[key] = { word: key, root: e.root || "", pos: e.pos || "", definition: e.definition || "", example: para.slice(0, 240), added: Date.now() };
+    await putMeta(state.meta);
+    refreshSavedMarks();
+    updateSavedCount();
+    showWord(word, spanEl);
+  };
+}
+
+function refreshSavedMarks() {
+  for (const s of $("page").querySelectorAll(".w")) s.classList.toggle("saved", !!state.meta.saved[normalize(s.textContent)]);
+}
+function updateSavedCount() { $("savedNum").textContent = Object.keys(state.meta.saved).length; }
+
+$("savedBtn").addEventListener("click", () => {
+  const items = Object.values(state.meta.saved).sort((a, b) => b.added - a.added);
+  openSheet(`<h2>Saved words (${items.length})</h2>` + (items.length ? items.map((s) => `
+    <div class="saved-item"><span class="w1">${escapeHTML(s.word)}</span>
+      <span class="d1">${escapeHTML(s.definition)}${s.root && s.root !== s.word ? ` <i>(${escapeHTML(s.root)})</i>` : ""}</span>
+      <button data-w="${escapeHTML(s.word)}">Remove</button></div>`).join("")
+    : '<p class="sub">Tap any word, then “Save word” to collect it here.</p>'));
+  $("sheet").querySelectorAll("button[data-w]").forEach((b) => b.addEventListener("click", async () => {
+    delete state.meta.saved[b.dataset.w];
+    await putMeta(state.meta);
+    b.closest(".saved-item").remove();
+    refreshSavedMarks(); updateSavedCount();
+  }));
+});
+
+$("chaptersBtn").addEventListener("click", () => {
+  const cur = state.pages[state.pageIdx].ci;
+  openSheet("<h2>Chapters</h2>" + state.book.chapters.map((c, i) =>
+    `<button class="list-item ${i === cur ? "current" : ""}" data-ci="${i}">${escapeHTML(c.title)}</button>`).join(""));
+  $("sheet").querySelectorAll("[data-ci]").forEach((b) => b.addEventListener("click", () => {
+    closeSheet(); showPage(state.chapterPageStart[+b.dataset.ci]);
+  }));
+  const curBtn = $("sheet").querySelector(".current");
+  if (curBtn) curBtn.scrollIntoView({ block: "center" });
+});
+
+$("settingsBtn").addEventListener("click", renderSettings);
+function renderSettings() {
+  const themeBtn = (v, label) => `<button data-theme-v="${v}" class="${settings.theme === v ? "on" : ""}">${label}</button>`;
+  openSheet(`<h2>Text</h2>
+    <div class="setting"><span>Size</span>
+      <div class="seg"><button id="fsDown">A−</button><button disabled>${settings.fontSize}</button><button id="fsUp">A+</button></div></div>
+    <div class="setting"><span>Theme</span>
+      <div class="seg">${themeBtn("auto", "Auto")}${themeBtn("dark", "Dark")}${themeBtn("light", "Light")}</div></div>`);
+  $("fsDown").onclick = () => { settings.fontSize = Math.max(14, settings.fontSize - 2); saveSettings(); renderSettings(); };
+  $("fsUp").onclick = () => { settings.fontSize = Math.min(36, settings.fontSize + 2); saveSettings(); renderSettings(); };
+  $("sheet").querySelectorAll("[data-theme-v]").forEach((b) => b.onclick = () => { settings.theme = b.dataset.themeV; saveSettings(); renderSettings(); });
+}
+
+/* ================= Navigation ================= */
+$("prevBtn").addEventListener("click", () => showPage(state.pageIdx - 1));
+$("nextBtn").addEventListener("click", () => showPage(state.pageIdx + 1));
+$("backBtn").addEventListener("click", () => { closeSheet(); state.book = null; renderLibrary(); });
+document.addEventListener("keydown", (e) => {
+  if (!state.book || !$("sheet").classList.contains("hidden")) { if (e.key === "Escape") closeSheet(); return; }
+  if (e.key === "ArrowRight") showPage(state.pageIdx + 1);
+  if (e.key === "ArrowLeft") showPage(state.pageIdx - 1);
+});
+// Horizontal swipe to turn pages.
+let touch = null;
+$("page").addEventListener("touchstart", (e) => { const t = e.touches[0]; touch = { x: t.clientX, y: t.clientY, t: Date.now() }; }, { passive: true });
+$("page").addEventListener("touchend", (e) => {
+  if (!touch) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touch.x, dy = t.clientY - touch.y;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5 && Date.now() - touch.t < 800) {
+    showPage(state.pageIdx + (dx < 0 ? 1 : -1));
+  }
+  touch = null;
+}, { passive: true });
+
+/* ================= Import ================= */
+$("importBtn").addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const status = $("status");
+  status.textContent = "Reading " + file.name + "…";
+  try {
+    const book = JSON.parse(await file.text());
+    validateBook(book);
+    await putBook(book);
+    status.textContent = `Imported “${book.title}”.`;
+    renderLibrary();
+  } catch (err) {
+    status.textContent = "Couldn't import: " + err.message;
+  }
+});
+function validateBook(b) {
+  if (!b || typeof b !== "object") throw new Error("not a JSON object");
+  if (!b.id) b.id = (b.title || "book").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-");
+  if (!Array.isArray(b.chapters) || !b.chapters.length) throw new Error("missing chapters");
+  for (const ch of b.chapters) if (!Array.isArray(ch.paragraphs)) throw new Error("chapter without paragraphs");
+  if (!b.dictionary) b.dictionary = {};
+}
+
+function escapeHTML(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ================= Boot ================= */
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+renderLibrary();
+</script>
+</body>
+</html>
