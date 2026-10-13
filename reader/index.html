@@ -65,7 +65,15 @@
   .book-card .author { color: var(--muted); font-size: 14px; margin-top: 2px; }
   .book-card .prog { height: 4px; background: var(--border); border-radius: 2px; margin-top: 10px; overflow: hidden; }
   .book-card .prog > div { height: 100%; background: var(--accent); }
-  .book-card .del { color: var(--muted); font-size: 13px; padding: 6px; }
+  .lib-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .edit-btn { color: var(--accent); font-size: 17px; padding: 6px 4px; }
+  .edit-btn.done { font-weight: 600; }
+  .book-card .del {
+    flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+    background: #e5484d; color: #fff;
+  }
+  .book-card .del svg { width: 20px; height: 20px; }
+  .book-card.editing { cursor: default; }
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     background: var(--accent); color: #fff; border-radius: 12px; padding: 12px 18px; font-weight: 600;
@@ -164,7 +172,10 @@
 
 <!-- Library -->
 <section id="library">
-  <h1>Lector</h1>
+  <div class="lib-head">
+    <h1>Lector</h1>
+    <button class="edit-btn hidden" id="editBtn">Edit</button>
+  </div>
   <p class="sub">Spanish books, fully offline.</p>
   <div id="books"></div>
   <div class="actions">
@@ -367,10 +378,19 @@ function chapterPages(ci) {
 const state = { book: null, meta: null, chPages: [], ci: 0, pg: 0, open: new Set() };
 const $ = (id) => document.getElementById(id);
 
+// Deleting is only possible in edit mode, so a stray tap can't remove a book.
+let libraryEditing = false;
+$("editBtn").addEventListener("click", () => { libraryEditing = !libraryEditing; renderLibrary(); });
+
 async function renderLibrary() {
   $("reader").classList.add("hidden");
   $("library").classList.remove("hidden");
   const books = await listBooks();
+  if (!books.length) libraryEditing = false;
+  const editBtn = $("editBtn");
+  editBtn.classList.toggle("hidden", !books.length);
+  editBtn.classList.toggle("done", libraryEditing);
+  editBtn.textContent = libraryEditing ? "Done" : "Edit";
   const wrap = $("books");
   wrap.innerHTML = "";
   if (!books.length) {
@@ -381,7 +401,7 @@ async function renderLibrary() {
     const meta = await getMeta(b.id);
     const pct = meta.pos ? Math.round((meta.pos.globalIdx || 0) / Math.max(1, b.total - 1) * 100) : 0;
     const card = document.createElement("div");
-    card.className = "book-card";
+    card.className = "book-card" + (libraryEditing ? " editing" : "");
     card.innerHTML = `
       <div class="cover">${escapeHTML((b.title || "?")[0])}</div>
       <div class="meta">
@@ -389,15 +409,17 @@ async function renderLibrary() {
         <div class="author">${escapeHTML(b.author || "")} · ${pct}%</div>
         <div class="prog"><div style="width:${pct}%"></div></div>
       </div>
-      <button class="del" aria-label="Remove book">Remove</button>`;
-    card.addEventListener("click", (e) => {
-      if (e.target.closest(".del")) return;
-      openBook(b.id);
-    });
-    card.querySelector(".del").addEventListener("click", async () => {
-      if (!confirm(`Remove "${b.title}" from this device? Your saved words for it will be deleted too.`)) return;
-      await delBook(b.id); await delMeta(b.id); renderLibrary();
-    });
+      ${libraryEditing ? `<button class="del" aria-label="Delete ${escapeHTML(b.title || "book")}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
+      </button>` : ""}`;
+    if (libraryEditing) {
+      card.querySelector(".del").addEventListener("click", async () => {
+        if (!confirm(`Delete "${b.title}" from this device? Your reading position and saved words for it will be deleted too.`)) return;
+        await delBook(b.id); await delMeta(b.id); renderLibrary();
+      });
+    } else {
+      card.addEventListener("click", () => openBook(b.id));
+    }
     wrap.appendChild(card);
   }
 }
@@ -626,7 +648,7 @@ window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer
 
 $("prevBtn").addEventListener("click", () => step(-1));
 $("nextBtn").addEventListener("click", () => step(1));
-$("backBtn").addEventListener("click", () => { closeSheet(); state.book = null; renderLibrary(); });
+$("backBtn").addEventListener("click", () => { closeSheet(); state.book = null; libraryEditing = false; renderLibrary(); });
 document.addEventListener("keydown", (e) => {
   if (!state.book || !$("sheet").classList.contains("hidden")) { if (e.key === "Escape") closeSheet(); return; }
   if (e.key === "ArrowRight") step(1);
